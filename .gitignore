@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright MCP logs
+.playwright-mcp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
