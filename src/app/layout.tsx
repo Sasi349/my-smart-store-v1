@@ -44,8 +44,10 @@ export const metadata: Metadata = {
     siteName: "JyGS",
   },
   icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/icon.svg",
   },
   manifest: "/manifest.json",
 };

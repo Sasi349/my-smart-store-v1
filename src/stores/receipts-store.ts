@@ -64,6 +64,8 @@ interface ReceiptsState {
   searchQuery: string;
   statusFilter: StatusFilter;
 
+  reset: () => void;
+
   // Fetch
   fetchReceipts: (storeId: string) => Promise<void>;
 
@@ -176,6 +178,8 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
   isLoaded: false,
   searchQuery: "",
   statusFilter: "all",
+
+  reset: () => set({ receipts: [], currentDraft: { ...initialDraft, items: [] }, isLoaded: false, searchQuery: "", statusFilter: "all" }),
 
   fetchReceipts: async (storeId) => {
     const supabase = createClient();

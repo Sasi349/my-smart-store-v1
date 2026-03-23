@@ -8,6 +8,7 @@ interface StoresState {
   searchQuery: string;
   typeFilter: string;
   isLoaded: boolean;
+  reset: () => void;
   fetchStores: () => Promise<void>;
   addStore: (store: Omit<Store, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   updateStore: (id: string, data: Partial<Store>) => Promise<void>;
@@ -36,6 +37,8 @@ export const useStoresStore = create<StoresState>()((set, get) => ({
   searchQuery: "",
   typeFilter: "",
   isLoaded: false,
+
+  reset: () => set({ stores: [], searchQuery: "", typeFilter: "", isLoaded: false }),
 
   fetchStores: async () => {
     const supabase = createClient();

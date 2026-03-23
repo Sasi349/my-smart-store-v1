@@ -3,6 +3,24 @@ import { persist } from "zustand/middleware";
 import type { Store } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
+// Reset all data stores — called on logout and store switch
+// Lazy imports to avoid circular dependencies
+function resetAllDataStores() {
+  const { useProductsStore } = require("@/stores/products-store");
+  const { useCustomersStore } = require("@/stores/customers-store");
+  const { useReceiptsStore } = require("@/stores/receipts-store");
+  const { useUsersStore } = require("@/stores/users-store");
+  const { useStoresStore } = require("@/stores/stores-store");
+  const { useRolesStore } = require("@/stores/roles-store");
+
+  useProductsStore.getState().reset();
+  useCustomersStore.getState().reset();
+  useReceiptsStore.getState().reset();
+  useUsersStore.getState().reset();
+  useStoresStore.getState().reset();
+  useRolesStore.getState().reset();
+}
+
 // Profile as returned from Supabase profiles table
 export interface Profile {
   id: string;
@@ -43,13 +61,21 @@ export const useAuthStore = create<AuthState>()(
       _hasHydrated: false,
 
       setProfile: (profile) => set({ profile }),
-      setCurrentStore: (currentStore) => set({ currentStore }),
+      setCurrentStore: (currentStore) => {
+        const prev = get().currentStore;
+        set({ currentStore });
+        // Reset data stores when switching to a different store
+        if (prev?.id !== currentStore?.id) {
+          resetAllDataStores();
+        }
+      },
       setImpersonating: (isImpersonating) => set({ isImpersonating }),
       setHasHydrated: (_hasHydrated) => set({ _hasHydrated }),
 
       logout: async () => {
         const supabase = createClient();
         await supabase.auth.signOut();
+        resetAllDataStores();
         set({ profile: null, currentStore: null, isImpersonating: false });
       },
 

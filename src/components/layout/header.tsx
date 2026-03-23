@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Settings, Sun, Moon, Monitor, User, LogOut, ArrowLeft } from "lucide-react";
+import { Logo } from "@/components/logo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -49,9 +50,12 @@ export function Header() {
           </Button>
         )}
 
-        <h1 className="min-w-0 flex-1 truncate text-lg font-bold tracking-tight">
-          {headerTitle}
-        </h1>
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <Logo size={26} />
+          <h1 className="truncate text-lg font-bold tracking-tight">
+            {headerTitle}
+          </h1>
+        </div>
 
         {isImpersonating && (
           <span className="shrink-0 whitespace-nowrap text-[10px] bg-destructive text-destructive-foreground px-2 py-0.5 rounded-full font-medium">

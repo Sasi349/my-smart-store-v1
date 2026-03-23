@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, type Profile } from "@/stores/auth-store";
 import { createClient } from "@/lib/supabase/client";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Lock, Mail, KeyRound, Delete } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/logo";
 import { verifyPasscode } from "./actions";
 
 type LoginMode = "credentials" | "passcode";
@@ -105,14 +106,14 @@ export default function LoginPage() {
     }
   }
 
-  async function handlePasscodeLogin() {
+  const handlePasscodeLogin = useCallback(async (code: string) => {
     setError("");
-    if (passcode.length !== 6) return;
+    if (code.length !== 6) return;
 
     setLoading(true);
     try {
       // Server action: verify passcode and get magic link token
-      const result = await verifyPasscode(passcode);
+      const result = await verifyPasscode(code);
 
       if (!result.success || !result.email || !result.token) {
         setError(result.error || "Invalid passcode");
@@ -149,14 +150,14 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [supabase, fetchProfile]);
 
   // Auto-submit when passcode reaches 6 digits
   useEffect(() => {
     if (passcode.length === 6) {
-      handlePasscodeLogin();
+      handlePasscodeLogin(passcode);
     }
-  }, [passcode]);
+  }, [passcode, handlePasscodeLogin]);
 
   function handlePadPress(digit: string) {
     if (passcode.length < 6) {
@@ -172,7 +173,8 @@ export default function LoginPage() {
   if (!_hasHydrated || profile) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-center space-y-3">
+        <div className="flex flex-col items-center space-y-3">
+          <Logo size={48} />
           <h1 className="text-2xl font-bold text-primary">JyGS</h1>
           <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
@@ -184,8 +186,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
         {/* Logo */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-primary">JyGS</h1>
+        <div className="flex flex-col items-center">
+          <Logo size={48} />
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-primary">JyGS</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Smart Store Management
           </p>

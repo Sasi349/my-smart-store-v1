@@ -8,6 +8,7 @@ interface UsersState {
   searchQuery: string;
   roleFilter: UserRole | "all";
   isLoaded: boolean;
+  reset: () => void;
   fetchUsers: () => Promise<void>;
   addUser: (user: User) => void;
   updateUser: (id: string, data: Partial<User>) => Promise<void>;
@@ -38,6 +39,8 @@ export const useUsersStore = create<UsersState>()((set, get) => ({
   searchQuery: "",
   roleFilter: "all",
   isLoaded: false,
+
+  reset: () => set({ users: [], searchQuery: "", roleFilter: "all", isLoaded: false }),
 
   fetchUsers: async () => {
     const supabase = createClient();
@@ -76,7 +79,7 @@ export const useUsersStore = create<UsersState>()((set, get) => ({
       return;
     }
 
-    // Update local state optimistically
+    // Update local state after DB success
     set((state) => ({
       users: state.users.map((u) =>
         u.id === id ? { ...u, ...updates } : u

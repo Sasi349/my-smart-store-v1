@@ -17,6 +17,7 @@ interface RolesState {
   roles: Role[];
   searchQuery: string;
   isLoaded: boolean;
+  reset: () => void;
   fetchRoles: () => Promise<void>;
   addRole: (role: Omit<Role, "id" | "createdAt">) => Promise<void>;
   updateRole: (id: string, updates: Partial<Omit<Role, "id" | "createdAt">>) => Promise<void>;
@@ -61,6 +62,8 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
   roles: [],
   searchQuery: "",
   isLoaded: false,
+
+  reset: () => set({ roles: [], searchQuery: "", isLoaded: false }),
 
   fetchRoles: async () => {
     const supabase = createClient();

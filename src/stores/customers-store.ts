@@ -11,6 +11,7 @@ interface CustomersState {
   typeFilter: Customer["type"] | "all";
   sortBy: SortBy;
   isLoaded: boolean;
+  reset: () => void;
   fetchCustomers: (storeId: string) => Promise<void>;
   addCustomer: (customer: Omit<Customer, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
@@ -41,6 +42,8 @@ export const useCustomersStore = create<CustomersState>()((set, get) => ({
   typeFilter: "all",
   sortBy: "newest",
   isLoaded: false,
+
+  reset: () => set({ customers: [], searchQuery: "", typeFilter: "all", sortBy: "newest", isLoaded: false }),
 
   fetchCustomers: async (storeId) => {
     const supabase = createClient();

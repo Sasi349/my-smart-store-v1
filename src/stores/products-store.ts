@@ -11,6 +11,7 @@ interface ProductsState {
   categoryFilter: string;
   sortBy: SortBy;
   isLoaded: boolean;
+  reset: () => void;
   fetchProducts: (storeId: string) => Promise<void>;
   addProduct: (product: Omit<Product, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   updateProduct: (id: string, data: Partial<Product>) => Promise<void>;
@@ -47,6 +48,8 @@ export const useProductsStore = create<ProductsState>()((set, get) => ({
   categoryFilter: "all",
   sortBy: "newest",
   isLoaded: false,
+
+  reset: () => set({ products: [], searchQuery: "", categoryFilter: "all", sortBy: "newest", isLoaded: false }),
 
   fetchProducts: async (storeId) => {
     const supabase = createClient();
