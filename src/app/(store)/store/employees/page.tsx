@@ -23,12 +23,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   Plus,
   MoreVertical,
   Pencil,
   Trash2,
   Phone,
+  ShieldX,
 } from "lucide-react";
 
 function getInitials(name: string) {
@@ -43,10 +45,22 @@ function getInitials(name: string) {
 export default function EmployeesPage() {
   const { currentStore } = useAuthStore();
   const { users, isLoaded, deleteUser, fetchUsers } = useUsersStore();
+  const { isAdmin, isLoaded: permLoaded } = usePermissions();
 
   useEffect(() => {
     if (!isLoaded) fetchUsers();
   }, [isLoaded, fetchUsers]);
+
+  // Only admins can manage employees
+  if (permLoaded && !isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <ShieldX className="size-12 mb-3 opacity-40" />
+        <p className="text-sm font-medium">Access Denied</p>
+        <p className="text-xs mt-1">Only store admins can manage employees.</p>
+      </div>
+    );
+  }
 
   const employees = users.filter(
     (u) => u.role === "employee" && u.storeId === currentStore?.id

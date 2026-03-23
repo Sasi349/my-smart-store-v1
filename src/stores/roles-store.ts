@@ -2,6 +2,14 @@ import { create } from "zustand";
 import type { Role, Permission } from "@/types";
 import { MODULES } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import {
+  dbInsertRole,
+  dbUpdateRole,
+  dbDeleteRole,
+  dbInsertPermissions,
+  dbUpdatePermission,
+  dbDeletePermissionsByRole,
+} from "@/lib/db-actions";
 
 type PermissionAction = "canCreate" | "canRead" | "canUpdate" | "canDelete";
 
@@ -91,23 +99,18 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
   addRole: async (roleData) => {
     if (!roleData.name?.trim()) return;
 
-    const supabase = createClient();
+    const roleResult = await dbInsertRole({
+      name: roleData.name,
+      store_id: roleData.storeId || null,
+      is_system: roleData.isSystem,
+    });
 
-    // Insert role
-    const { data: roleRow, error: roleError } = await supabase
-      .from("roles")
-      .insert({
-        name: roleData.name,
-        store_id: roleData.storeId || null,
-        is_system: roleData.isSystem,
-      })
-      .select()
-      .single();
-
-    if (roleError || !roleRow) {
-      if (roleError) console.error("Failed to add role:", roleError.message);
+    if (!roleResult.success) {
+      console.error("Failed to add role:", roleResult.error);
       return;
     }
+
+    const roleRow = roleResult.data;
 
     // Insert permissions for all modules
     const permInserts = MODULES.map((mod) => {
@@ -122,12 +125,8 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
       };
     });
 
-    const { data: permRows } = await supabase
-      .from("permissions")
-      .insert(permInserts)
-      .select();
-
-    const permissions = (permRows || []).map(mapPermission);
+    const permsResult = await dbInsertPermissions(permInserts);
+    const permissions = permsResult.success ? permsResult.data.map(mapPermission) : [];
     const newRole = mapRole(roleRow, permissions);
 
     set((state) => ({ roles: [...state.roles, newRole] }));
@@ -136,21 +135,18 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
   updateRole: async (id, updates) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
-
     // Update role table fields
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.storeId !== undefined) dbUpdates.store_id = updates.storeId || null;
 
     if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from("roles").update(dbUpdates).eq("id", id);
+      await dbUpdateRole(id, dbUpdates);
     }
 
     // If permissions are included, sync them to DB
     if (updates.permissions) {
-      // Delete existing permissions for this role and re-insert
-      await supabase.from("permissions").delete().eq("role_id", id);
+      await dbDeletePermissionsByRole(id);
 
       const permInserts = updates.permissions.map((p) => ({
         role_id: id,
@@ -161,14 +157,9 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
         can_delete: p.canDelete,
       }));
 
-      const { data: permRows } = await supabase
-        .from("permissions")
-        .insert(permInserts)
-        .select();
-
-      // Use DB-returned rows for accurate IDs
-      if (permRows) {
-        updates = { ...updates, permissions: permRows.map(mapPermission) };
+      const permsResult = await dbInsertPermissions(permInserts);
+      if (permsResult.success) {
+        updates = { ...updates, permissions: permsResult.data.map(mapPermission) };
       }
     }
 
@@ -182,10 +173,9 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
   deleteRole: async (id) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
-    const { error } = await supabase.from("roles").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete role:", error.message);
+    const result = await dbDeleteRole(id);
+    if (!result.success) {
+      console.error("Failed to delete role:", result.error);
       return;
     }
     set((state) => ({ roles: state.roles.filter((role) => role.id !== id) }));
@@ -201,24 +191,17 @@ export const useRolesStore = create<RolesState>()((set, get) => ({
     const perm = role.permissions.find((p) => p.module === module);
     const newValue = perm ? !perm[action] : true;
 
-    const supabase = createClient();
-
     if (perm) {
-      // Update existing permission
-      await supabase
-        .from("permissions")
-        .update({ [actionToColumn[action]]: newValue })
-        .eq("id", perm.id);
+      await dbUpdatePermission(perm.id, { [actionToColumn[action]]: newValue });
     } else {
-      // Create new permission
-      await supabase.from("permissions").insert({
+      await dbInsertPermissions([{
         role_id: roleId,
         module,
         can_create: action === "canCreate",
         can_read: action === "canRead",
         can_update: action === "canUpdate",
         can_delete: action === "canDelete",
-      });
+      }]);
     }
 
     // Update local state

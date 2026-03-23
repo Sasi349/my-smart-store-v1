@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import type { User, UserRole } from "@/types";
 import { useUsersStore } from "@/stores/users-store";
 import { useStoresStore } from "@/stores/stores-store";
-import { createAuthUser, updateAuthUserPassword } from "@/app/(admin)/admin/users/actions";
+import { createAuthUser, updateUserProfile, updateUserPasscode, updateAuthUserPassword } from "@/app/(admin)/admin/users/actions";
 import {
   Dialog,
   DialogContent,
@@ -67,7 +67,7 @@ export function UserFormDialog({
   user,
 }: UserFormDialogProps) {
   const isEdit = !!user;
-  const { addUser, updateUser, fetchUsers } = useUsersStore();
+  const { fetchUsers } = useUsersStore();
   const { stores } = useStoresStore();
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -128,15 +128,29 @@ export function UserFormDialog({
     setServerError(null);
 
     if (isEdit && user) {
-      // Update profile in DB
-      await updateUser(user.id, {
+      // Update profile via server action (bypasses RLS)
+      const profileResult = await updateUserProfile(user.id, {
         name: data.name,
         mobile: data.mobile,
         username: data.username,
         email: data.email || undefined,
-        role: data.role as UserRole,
+        role: data.role as string,
         storeId: showStoreSelect ? data.storeId || undefined : undefined,
       });
+
+      if (!profileResult.success) {
+        setServerError(profileResult.error || "Failed to update user");
+        return;
+      }
+
+      // Update passcode if provided
+      if (data.passcode) {
+        const passcodeResult = await updateUserPasscode(user.id, data.passcode);
+        if (!passcodeResult.success) {
+          setServerError(passcodeResult.error || "Failed to update passcode");
+          return;
+        }
+      }
 
       // Update password if provided
       if (data.password) {
@@ -146,6 +160,9 @@ export function UserFormDialog({
           return;
         }
       }
+
+      // Refresh users list
+      await fetchUsers();
     } else {
       // Create new auth user via server action
       const result = await createAuthUser({

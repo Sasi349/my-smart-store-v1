@@ -7,19 +7,22 @@ import { StoreBottomNav } from "@/components/layout/store-bottom-nav";
 import { useAuthStore } from "@/stores/auth-store";
 
 export default function StoreLayout({ children }: { children: React.ReactNode }) {
-  const { currentStore, _hasHydrated } = useAuthStore();
+  const { profile, currentStore, _hasHydrated } = useAuthStore();
   const router = useRouter();
 
-  // Redirect if no store selected (only after hydration)
+  // Redirect if not authenticated or no store selected
   useEffect(() => {
-    if (_hasHydrated && !currentStore) {
-      router.push("/admin");
+    if (!_hasHydrated) return;
+    if (!profile) {
+      router.push("/login");
+    } else if (!currentStore) {
+      router.push(profile.role === "super_admin" ? "/admin" : "/login");
     }
-  }, [currentStore, _hasHydrated, router]);
+  }, [profile, currentStore, _hasHydrated, router]);
 
   // Don't render until hydrated
   if (!_hasHydrated) return null;
-  if (!currentStore) return null;
+  if (!profile || !currentStore) return null;
 
   return (
     <div className="flex min-h-screen flex-col">

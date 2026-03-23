@@ -46,12 +46,14 @@ interface ProductFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   product?: Product | null;
+  readOnly?: boolean;
 }
 
 export function ProductFormDialog({
   open,
   onOpenChange,
   product,
+  readOnly = false,
 }: ProductFormDialogProps) {
   const { addProduct, updateProduct, categories } = useProductsStore();
   const { currentStore } = useAuthStore();
@@ -152,10 +154,12 @@ export function ProductFormDialog({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? "Edit Product" : "Add Product"}
+            {readOnly ? "View Product" : isEditing ? "Edit Product" : "Add Product"}
           </DialogTitle>
           <DialogDescription>
-            {isEditing
+            {readOnly
+              ? "Product details (read-only)."
+              : isEditing
               ? "Update the product details below."
               : "Fill in the details to add a new product."}
           </DialogDescription>
@@ -165,6 +169,7 @@ export function ProductFormDialog({
           onSubmit={form.handleSubmit(onSubmit)}
           className="flex flex-col gap-4"
         >
+          <fieldset disabled={readOnly} className="contents">
           {/* Name */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="name">Name *</Label>
@@ -343,17 +348,20 @@ export function ProductFormDialog({
           </div>
 
 
+          </fieldset>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {readOnly ? "Close" : "Cancel"}
             </Button>
-            <Button type="submit">
-              {isEditing ? "Save Changes" : "Add Product"}
-            </Button>
+            {!readOnly && (
+              <Button type="submit">
+                {isEditing ? "Save Changes" : "Add Product"}
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

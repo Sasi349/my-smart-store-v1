@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { User, UserRole } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import { dbUpdateProfile, dbDeleteProfile } from "@/lib/db-actions";
 
 interface UsersState {
   users: User[];
@@ -60,7 +61,6 @@ export const useUsersStore = create<UsersState>()((set, get) => ({
   updateUser: async (id, updates) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
     if (updates.mobile !== undefined) dbUpdates.mobile = updates.mobile.trim();
@@ -70,31 +70,26 @@ export const useUsersStore = create<UsersState>()((set, get) => ({
     if (updates.roleId !== undefined) dbUpdates.role_id = updates.roleId;
     if (updates.storeId !== undefined) dbUpdates.store_id = updates.storeId || null;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .update(dbUpdates)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to update user:", error.message);
+    const result = await dbUpdateProfile(id, dbUpdates);
+    if (!result.success) {
+      console.error("Failed to update user:", result.error);
       return;
     }
-    if (data) {
-      set((state) => ({
-        users: state.users.map((u) => (u.id === id ? mapRow(data) : u)),
-      }));
-    }
+
+    // Update local state optimistically
+    set((state) => ({
+      users: state.users.map((u) =>
+        u.id === id ? { ...u, ...updates } : u
+      ),
+    }));
   },
 
   deleteUser: async (id) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
-    const { error } = await supabase.from("profiles").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete user:", error.message);
+    const result = await dbDeleteProfile(id);
+    if (!result.success) {
+      console.error("Failed to delete user:", result.error);
       return;
     }
     set((state) => ({ users: state.users.filter((u) => u.id !== id) }));

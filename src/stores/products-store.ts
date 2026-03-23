@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Product } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsertProduct, dbUpdateProduct, dbDeleteProduct } from "@/lib/db-actions";
 
 type SortBy = "name" | "price" | "stock" | "newest";
 
@@ -67,38 +68,30 @@ export const useProductsStore = create<ProductsState>()((set, get) => ({
   addProduct: async (productData) => {
     if (!productData.name?.trim() || !productData.storeId?.trim()) return;
 
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("products")
-      .insert({
-        store_id: productData.storeId,
-        name: productData.name.trim(),
-        barcode: productData.barcode?.trim() || null,
-        category: productData.category,
-        price: productData.price,
-        purchase_price: productData.purchasePrice,
-        offer_price: productData.offerPrice ?? null,
-        offer_type: productData.offerType ?? null,
-        stock: productData.stock,
-        picture_url: productData.pictureUrl || null,
-        unit: productData.unit,
-      })
-      .select()
-      .single();
+    const result = await dbInsertProduct({
+      store_id: productData.storeId,
+      name: productData.name.trim(),
+      barcode: productData.barcode?.trim() || null,
+      category: productData.category,
+      price: productData.price,
+      purchase_price: productData.purchasePrice,
+      offer_price: productData.offerPrice ?? null,
+      offer_type: productData.offerType ?? null,
+      stock: productData.stock,
+      picture_url: productData.pictureUrl || null,
+      unit: productData.unit,
+    });
 
-    if (error) {
-      console.error("Failed to add product:", error.message);
+    if (!result.success) {
+      console.error("Failed to add product:", result.error);
       return;
     }
-    if (data) {
-      set((state) => ({ products: [mapRow(data), ...state.products] }));
-    }
+    set((state) => ({ products: [mapRow(result.data), ...state.products] }));
   },
 
   updateProduct: async (id, updates) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
     if (updates.barcode !== undefined) dbUpdates.barcode = updates.barcode?.trim() || null;
@@ -111,31 +104,22 @@ export const useProductsStore = create<ProductsState>()((set, get) => ({
     if (updates.pictureUrl !== undefined) dbUpdates.picture_url = updates.pictureUrl || null;
     if (updates.unit !== undefined) dbUpdates.unit = updates.unit;
 
-    const { data, error } = await supabase
-      .from("products")
-      .update(dbUpdates)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to update product:", error.message);
+    const result = await dbUpdateProduct(id, dbUpdates);
+    if (!result.success) {
+      console.error("Failed to update product:", result.error);
       return;
     }
-    if (data) {
-      set((state) => ({
-        products: state.products.map((p) => (p.id === id ? mapRow(data) : p)),
-      }));
-    }
+    set((state) => ({
+      products: state.products.map((p) => (p.id === id ? mapRow(result.data) : p)),
+    }));
   },
 
   deleteProduct: async (id) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete product:", error.message);
+    const result = await dbDeleteProduct(id);
+    if (!result.success) {
+      console.error("Failed to delete product:", result.error);
       return;
     }
     set((state) => ({ products: state.products.filter((p) => p.id !== id) }));

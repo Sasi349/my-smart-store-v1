@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useCustomersStore } from "@/stores/customers-store";
+import { useReceiptsStore } from "@/stores/receipts-store";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Customer } from "@/types";
 import { PageHeader } from "@/components/layout/page-header";
@@ -38,6 +40,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   Search,
   Plus,
@@ -47,6 +50,8 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  ShieldX,
+  ShoppingBag,
 } from "lucide-react";
 
 const TYPE_BADGE_VARIANT: Record<
@@ -80,6 +85,7 @@ const SORT_LABELS: Record<string, string> = {
 
 export default function CustomersPage() {
   const { currentStore } = useAuthStore();
+  const router = useRouter();
   const {
     searchQuery,
     typeFilter,
@@ -92,12 +98,29 @@ export default function CustomersPage() {
     filteredCustomers,
     fetchCustomers,
   } = useCustomersStore();
+  const { receipts, isLoaded: receiptsLoaded, fetchReceipts } = useReceiptsStore();
+
+  const { hasPermission, canAccessModule, isLoaded: permLoaded } = usePermissions();
+  const canRead = canAccessModule("customers");
+  const canCreate = hasPermission("customers", "canCreate");
+  const canUpdate = hasPermission("customers", "canUpdate");
+  const canDelete = hasPermission("customers", "canDelete");
 
   useEffect(() => {
-    if (currentStore?.id && !isLoaded) {
-      fetchCustomers(currentStore.id);
+    if (currentStore?.id) {
+      if (!isLoaded) fetchCustomers(currentStore.id);
+      if (!receiptsLoaded) fetchReceipts(currentStore.id);
     }
-  }, [currentStore?.id, isLoaded, fetchCustomers]);
+  }, [currentStore?.id, isLoaded, receiptsLoaded, fetchCustomers, fetchReceipts]);
+
+  // Set of customer IDs that have at least one receipt
+  const customersWithPurchases = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of receipts) {
+      if (r.customerId) ids.add(r.customerId);
+    }
+    return ids;
+  }, [receipts]);
 
   const customers = filteredCustomers();
 
@@ -124,6 +147,16 @@ export default function CustomersPage() {
     }
   };
 
+  if (permLoaded && !canRead) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <ShieldX className="size-12 mb-3 opacity-40" />
+        <p className="text-sm font-medium">Access Denied</p>
+        <p className="text-xs mt-1">You don&apos;t have permission to view customers.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <PageHeader
@@ -131,14 +164,16 @@ export default function CustomersPage() {
         count={customers.length}
         backHref="/store"
       >
-        <Button
-          onClick={handleAdd}
-          size="sm"
-          className="hidden sm:inline-flex"
-        >
-          <Plus className="size-4" />
-          Add Customer
-        </Button>
+        {canCreate && (
+          <Button
+            onClick={handleAdd}
+            size="sm"
+            className="hidden sm:inline-flex"
+          >
+            <Plus className="size-4" />
+            Add Customer
+          </Button>
+        )}
       </PageHeader>
 
       {/* Filters */}
@@ -211,33 +246,39 @@ export default function CustomersPage() {
                     {TYPE_LABELS[customer.type]}
                   </Badge>
                 </CardTitle>
-                <CardAction>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="ghost" size="icon-xs" />
-                      }
-                    >
-                      <MoreVertical className="size-4" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => handleEdit(customer)}
+                {(canUpdate || canDelete) && (
+                  <CardAction>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon-xs" />
+                        }
                       >
-                        <Pencil />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setDeleteConfirm(customer)}
-                      >
-                        <Trash2 />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </CardAction>
+                        <MoreVertical className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {canUpdate && (
+                          <DropdownMenuItem
+                            onClick={() => handleEdit(customer)}
+                          >
+                            <Pencil />
+                            Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canUpdate && canDelete && <DropdownMenuSeparator />}
+                        {canDelete && (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => setDeleteConfirm(customer)}
+                          >
+                            <Trash2 />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </CardAction>
+                )}
               </CardHeader>
               <CardContent className="grid gap-1.5 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
@@ -256,6 +297,16 @@ export default function CustomersPage() {
                     <span className="truncate">{customer.address}</span>
                   </div>
                 )}
+                {customersWithPurchases.has(customer.id) && (
+                  <Button
+                    size="sm"
+                    className="mt-1 w-full"
+                    onClick={() => router.push(`/store/customers/${customer.id}/purchases`)}
+                  >
+                    <ShoppingBag className="size-3.5" data-icon="inline-start" />
+                    Purchase Details
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -263,19 +314,22 @@ export default function CustomersPage() {
       )}
 
       {/* FAB for mobile */}
-      <Button
-        onClick={handleAdd}
-        size="icon-lg"
-        className="fixed right-4 bottom-4 z-40 rounded-full shadow-lg sm:hidden"
-      >
-        <Plus className="size-5" />
-      </Button>
+      {canCreate && (
+        <Button
+          onClick={handleAdd}
+          size="icon-lg"
+          className="fixed right-4 bottom-4 z-40 rounded-full shadow-lg sm:hidden"
+        >
+          <Plus className="size-5" />
+        </Button>
+      )}
 
       {/* Form Dialog */}
       <CustomerFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         customer={editingCustomer}
+        readOnly={!!editingCustomer && !canUpdate}
       />
 
       {/* Delete Confirmation Dialog */}

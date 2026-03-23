@@ -6,6 +6,7 @@ import { ArrowLeft, User, Lock, KeyRound, Pencil, Check } from "lucide-react";
 
 import { useAuthStore } from "@/stores/auth-store";
 import { createClient } from "@/lib/supabase/client";
+import { updateUserProfile, updateUserPasscode } from "@/app/(admin)/admin/users/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,17 +78,14 @@ export default function ProfilePage() {
     }
 
     setProfileLoading(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        name: editName.trim(),
-        mobile: editMobile.trim(),
-        email: editEmail.trim() || null,
-      })
-      .eq("id", profile!.id);
+    const result = await updateUserProfile(profile!.id, {
+      name: editName.trim(),
+      mobile: editMobile.trim(),
+      email: editEmail.trim() || undefined,
+    });
 
-    if (error) {
-      setProfileMsg({ type: "error", text: error.message });
+    if (!result.success) {
+      setProfileMsg({ type: "error", text: result.error || "Failed to update profile." });
     } else {
       setProfile({
         ...profile!,
@@ -151,13 +149,10 @@ export default function ProfilePage() {
     }
 
     setPasscodeLoading(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ passcode: newPasscode, has_passcode: true })
-      .eq("id", profile!.id);
+    const result = await updateUserPasscode(profile!.id, newPasscode);
 
-    if (error) {
-      setPasscodeMsg({ type: "error", text: error.message });
+    if (!result.success) {
+      setPasscodeMsg({ type: "error", text: result.error || "Failed to update passcode." });
     } else {
       setPasscodeMsg({ type: "success", text: "Passcode changed successfully." });
       setNewPasscode("");

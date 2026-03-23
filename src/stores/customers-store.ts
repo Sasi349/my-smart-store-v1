@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Customer } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import { dbInsertCustomer, dbUpdateCustomer, dbDeleteCustomer } from "@/lib/db-actions";
 
 type SortBy = "name-asc" | "name-desc" | "newest" | "oldest";
 
@@ -61,33 +62,25 @@ export const useCustomersStore = create<CustomersState>()((set, get) => ({
   addCustomer: async (customerData) => {
     if (!customerData.name?.trim() || !customerData.storeId?.trim()) return;
 
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("customers")
-      .insert({
-        store_id: customerData.storeId,
-        name: customerData.name.trim(),
-        mobile: customerData.mobile.trim(),
-        email: customerData.email?.trim() || null,
-        type: customerData.type,
-        address: customerData.address?.trim() || null,
-      })
-      .select()
-      .single();
+    const result = await dbInsertCustomer({
+      store_id: customerData.storeId,
+      name: customerData.name.trim(),
+      mobile: customerData.mobile.trim(),
+      email: customerData.email?.trim() || null,
+      type: customerData.type,
+      address: customerData.address?.trim() || null,
+    });
 
-    if (error) {
-      console.error("Failed to add customer:", error.message);
+    if (!result.success) {
+      console.error("Failed to add customer:", result.error);
       return;
     }
-    if (data) {
-      set((state) => ({ customers: [mapRow(data), ...state.customers] }));
-    }
+    set((state) => ({ customers: [mapRow(result.data), ...state.customers] }));
   },
 
   updateCustomer: async (id, updates) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
     if (updates.mobile !== undefined) dbUpdates.mobile = updates.mobile.trim();
@@ -95,31 +88,22 @@ export const useCustomersStore = create<CustomersState>()((set, get) => ({
     if (updates.type !== undefined) dbUpdates.type = updates.type;
     if (updates.address !== undefined) dbUpdates.address = updates.address?.trim() || null;
 
-    const { data, error } = await supabase
-      .from("customers")
-      .update(dbUpdates)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to update customer:", error.message);
+    const result = await dbUpdateCustomer(id, dbUpdates);
+    if (!result.success) {
+      console.error("Failed to update customer:", result.error);
       return;
     }
-    if (data) {
-      set((state) => ({
-        customers: state.customers.map((c) => (c.id === id ? mapRow(data) : c)),
-      }));
-    }
+    set((state) => ({
+      customers: state.customers.map((c) => (c.id === id ? mapRow(result.data) : c)),
+    }));
   },
 
   deleteCustomer: async (id) => {
     if (!id?.trim()) return;
 
-    const supabase = createClient();
-    const { error } = await supabase.from("customers").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete customer:", error.message);
+    const result = await dbDeleteCustomer(id);
+    if (!result.success) {
+      console.error("Failed to delete customer:", result.error);
       return;
     }
     set((state) => ({ customers: state.customers.filter((c) => c.id !== id) }));

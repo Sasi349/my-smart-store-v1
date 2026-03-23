@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceiptsStore } from "@/stores/receipts-store";
 import { useProductsStore } from "@/stores/products-store";
@@ -79,8 +80,10 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
     setDraftCustomer,
     addDraftItem,
     updateDraftItemQuantity,
+    updateDraftItemPrice,
     removeDraftItem,
     setDraftDiscount,
+    setDraftDiscountType,
     resetDraft,
     addReceipt,
     draftSubtotal,
@@ -168,7 +171,9 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
         receiptId,
       })),
       subtotal,
-      discount: currentDraft.discount,
+      discount: currentDraft.discountType === "percentage"
+        ? subtotal * (currentDraft.discount / 100)
+        : currentDraft.discount,
       total,
       paidAmount: paid,
       balance: total - paid,
@@ -392,54 +397,59 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
               {currentDraft.items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-2 rounded-lg border p-2"
+                  className="rounded-lg border p-2 space-y-1.5"
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {item.productName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      ₹{item.unitPrice.toFixed(2)} each
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="icon-xs"
-                      onClick={() =>
-                        item.quantity > 1
-                          ? updateDraftItemQuantity(item.id, item.quantity - 1)
-                          : removeDraftItem(item.id)
-                      }
-                    >
-                      <Minus className="h-3 w-3" />
-                    </Button>
-                    <span className="w-6 text-center text-sm font-medium">
-                      {item.quantity}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {item.productName}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">
+                      ₹{item.total.toFixed(0)}
                     </span>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon-xs"
-                      onClick={() =>
-                        updateDraftItemQuantity(item.id, item.quantity + 1)
-                      }
+                      onClick={() => removeDraftItem(item.id)}
                     >
-                      <Plus className="h-3 w-3" />
+                      <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {/* Tap-to-edit unit price */}
+                    <TapToEditPrice
+                      value={item.unitPrice}
+                      onChange={(val) => updateDraftItemPrice(item.id, val)}
+                    />
 
-                  <span className="w-16 text-right text-sm font-medium tabular-nums">
-                    ₹{item.total.toFixed(0)}
-                  </span>
-
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => removeDraftItem(item.id)}
-                  >
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </Button>
+                    {/* Quantity controls */}
+                    <div className="flex items-center gap-1 ml-auto">
+                      <Button
+                        variant="outline"
+                        size="icon-xs"
+                        onClick={() =>
+                          item.quantity > 1
+                            ? updateDraftItemQuantity(item.id, item.quantity - 1)
+                            : removeDraftItem(item.id)
+                        }
+                      >
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <span className="w-6 text-center text-sm font-medium">
+                        {item.quantity}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon-xs"
+                        onClick={() =>
+                          updateDraftItemQuantity(item.id, item.quantity + 1)
+                        }
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -455,18 +465,49 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground shrink-0">
-                Discount (₹)
+                Discount
               </span>
-              <Input
-                type="number"
-                min={0}
-                value={currentDraft.discount || ""}
-                onChange={(e) =>
-                  setDraftDiscount(Math.max(0, Number(e.target.value) || 0))
-                }
-                placeholder="0"
-                className="h-7 w-24 ml-auto text-right"
-              />
+              <div className="flex items-center gap-1 ml-auto">
+                <div className="flex rounded-md border overflow-hidden h-7">
+                  <button
+                    type="button"
+                    onClick={() => setDraftDiscountType("flat")}
+                    className={cn(
+                      "px-2 text-xs font-medium transition-colors",
+                      currentDraft.discountType === "flat"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    ₹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraftDiscountType("percentage")}
+                    className={cn(
+                      "px-2 text-xs font-medium transition-colors border-l",
+                      currentDraft.discountType === "percentage"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    %
+                  </button>
+                </div>
+                <Input
+                  type="number"
+                  min={0}
+                  max={currentDraft.discountType === "percentage" ? 100 : draftSubtotal()}
+                  value={currentDraft.discount || ""}
+                  onChange={(e) => {
+                    const val = Math.max(0, Number(e.target.value) || 0);
+                    const max = currentDraft.discountType === "percentage" ? 100 : draftSubtotal();
+                    setDraftDiscount(Math.min(val, max));
+                  }}
+                  placeholder="0"
+                  className="h-7 w-20 text-right"
+                />
+              </div>
             </div>
             <div className="flex items-center justify-between text-sm font-semibold">
               <span>Total</span>
@@ -481,10 +522,16 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
               <Input
                 type="number"
                 min={0}
+                max={draftTotal()}
                 value={paidAmount}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setPaidAmount(val === "" ? "" : Math.max(0, Number(val)));
+                  if (val === "") {
+                    setPaidAmount("");
+                  } else {
+                    const num = Math.max(0, Number(val));
+                    setPaidAmount(Math.min(num, draftTotal()));
+                  }
                 }}
                 placeholder={draftTotal().toFixed(0)}
                 className="h-7 w-24 ml-auto text-right"
@@ -520,5 +567,66 @@ export function POSDialog({ open, onOpenChange }: POSDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TapToEditPrice({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (val: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(String(value));
+      // Small delay to let the input render
+      setTimeout(() => inputRef.current?.select(), 0);
+    }
+  }, [editing, value]);
+
+  function commit() {
+    const num = Math.max(0, Number(draft));
+    if (!isNaN(num) && num !== value) {
+      onChange(num);
+    }
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span>₹</span>
+        <Input
+          ref={inputRef}
+          type="number"
+          min={0}
+          step="0.01"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="h-6 w-20 text-xs text-center tabular-nums px-1"
+        />
+        <span className="shrink-0">each</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1.5 py-0.5 hover:bg-muted"
+    >
+      ₹{value.toFixed(2)} each
+    </button>
   );
 }

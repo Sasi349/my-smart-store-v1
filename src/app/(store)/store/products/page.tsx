@@ -16,11 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   Package,
   Plus,
   Search,
   Trash2,
+  ShieldX,
 } from "lucide-react";
 import {
   Dialog,
@@ -54,6 +56,12 @@ export default function ProductsPage() {
     deleteProduct,
     fetchProducts,
   } = useProductsStore();
+
+  const { hasPermission, canAccessModule, isLoaded: permLoaded } = usePermissions();
+  const canRead = canAccessModule("products");
+  const canCreate = hasPermission("products", "canCreate");
+  const canUpdate = hasPermission("products", "canUpdate");
+  const canDelete = hasPermission("products", "canDelete");
 
   useEffect(() => {
     if (currentStore?.id && !isLoaded) {
@@ -103,13 +111,25 @@ export default function ProductsPage() {
     return { final: product.offerPrice, hasOffer: true };
   }
 
+  if (permLoaded && !canRead) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <ShieldX className="size-12 mb-3 opacity-40" />
+        <p className="text-sm font-medium">Access Denied</p>
+        <p className="text-xs mt-1">You don&apos;t have permission to view products.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <PageHeader title="Products" count={products.length} backHref="/store">
-        <Button size="sm" onClick={handleCreate} className="hidden sm:flex">
-          <Plus className="size-4" data-icon="inline-start" />
-          Add Product
-        </Button>
+        {canCreate && (
+          <Button size="sm" onClick={handleCreate} className="hidden sm:flex">
+            <Plus className="size-4" data-icon="inline-start" />
+            Add Product
+          </Button>
+        )}
       </PageHeader>
 
       {/* Filters */}
@@ -217,20 +237,22 @@ export default function ProductsPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2 mt-1">
-                    <Button
-                      variant="destructive"
-                      size="icon-sm"
-                      className="shrink-0"
-                      onClick={() => setDeleteTarget(product)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        className="shrink-0"
+                        onClick={() => setDeleteTarget(product)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       className="flex-1"
                       onClick={() => handleEdit(product)}
                     >
-                      View Product
+                      {canUpdate ? "View Product" : "View"}
                     </Button>
                   </div>
                 </div>
@@ -241,19 +263,22 @@ export default function ProductsPage() {
       )}
 
       {/* Mobile FAB */}
-      <Button
-        size="icon-lg"
-        className="fixed bottom-6 right-6 rounded-full shadow-lg sm:hidden size-14"
-        onClick={handleCreate}
-      >
-        <Plus className="size-6" />
-      </Button>
+      {canCreate && (
+        <Button
+          size="icon-lg"
+          className="fixed bottom-6 right-6 rounded-full shadow-lg sm:hidden size-14"
+          onClick={handleCreate}
+        >
+          <Plus className="size-6" />
+        </Button>
+      )}
 
       {/* Product Form Dialog */}
       <ProductFormDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         product={editingProduct}
+        readOnly={!!editingProduct && !canUpdate}
       />
 
       {/* Delete Confirmation */}

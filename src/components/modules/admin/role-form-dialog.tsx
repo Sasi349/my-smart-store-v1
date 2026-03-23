@@ -32,9 +32,17 @@ import {
 
 // ── Schema ──
 
+const permissionEntrySchema = z.object({
+  canCreate: z.boolean(),
+  canRead: z.boolean(),
+  canUpdate: z.boolean(),
+  canDelete: z.boolean(),
+});
+
 const roleFormSchema = z.object({
   name: z.string().min(1, "Role name is required").max(50),
   storeScope: z.string().optional(),
+  permissionMatrix: z.record(z.string(), permissionEntrySchema),
 });
 
 type RoleFormValues = z.infer<typeof roleFormSchema>;
@@ -94,7 +102,7 @@ export function RoleFormDialog({ open, onOpenChange, editingRole }: RoleFormDial
     watch,
     formState: { errors },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } = useForm<RoleFormValues & { permissionMatrix: PermissionMatrix }>({
+  } = useForm<RoleFormValues>({
     resolver: zodResolver(roleFormSchema) as any,
     defaultValues: {
       name: "",
@@ -132,7 +140,7 @@ export function RoleFormDialog({ open, onOpenChange, editingRole }: RoleFormDial
     });
   }
 
-  async function onSubmit(data: RoleFormValues & { permissionMatrix: PermissionMatrix }) {
+  async function onSubmit(data: RoleFormValues) {
     const storeId = data.storeScope === "__global__" ? undefined : data.storeScope;
 
     const permissions: Permission[] = MODULES.map((mod, i) => {

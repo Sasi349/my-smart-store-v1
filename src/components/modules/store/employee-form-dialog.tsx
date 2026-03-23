@@ -7,7 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import type { User } from "@/types";
 import { useUsersStore } from "@/stores/users-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { createAuthUser, updateAuthUserPassword } from "@/app/(admin)/admin/users/actions";
+import { useRolesStore } from "@/stores/roles-store";
+import { createAuthUser, updateUserProfile, updateAuthUserPassword } from "@/app/(admin)/admin/users/actions";
 import {
   Dialog,
   DialogContent,
@@ -16,13 +17,18 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { Shield } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 const employeeFormSchema = (isEdit: boolean) =>
   z.object({
@@ -47,29 +53,6 @@ const employeeFormSchema = (isEdit: boolean) =>
 
 type EmployeeFormValues = z.infer<ReturnType<typeof employeeFormSchema>>;
 
-const EMPLOYEE_MODULES = [
-  { key: "products", label: "Products", description: "View and manage products" },
-  { key: "customers", label: "Customers", description: "View and manage customers" },
-  { key: "receipts", label: "Receipts", description: "Create and view receipts" },
-] as const;
-
-type ModuleKey = (typeof EMPLOYEE_MODULES)[number]["key"];
-
-interface ModuleAccess {
-  canRead: boolean;
-  canCreate: boolean;
-  canUpdate: boolean;
-  canDelete: boolean;
-}
-
-type PermissionsState = Record<ModuleKey, ModuleAccess>;
-
-const defaultPermissions: PermissionsState = {
-  products: { canRead: true, canCreate: false, canUpdate: false, canDelete: false },
-  customers: { canRead: true, canCreate: false, canUpdate: false, canDelete: false },
-  receipts: { canRead: true, canCreate: true, canUpdate: false, canDelete: false },
-};
-
 interface EmployeeFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,10 +65,23 @@ export function EmployeeFormDialog({
   employee,
 }: EmployeeFormDialogProps) {
   const isEdit = !!employee;
-  const { updateUser, fetchUsers } = useUsersStore();
+  const { fetchUsers } = useUsersStore();
   const { currentStore } = useAuthStore();
-  const [permissions, setPermissions] = useState<PermissionsState>(defaultPermissions);
+  const { roles, isLoaded: rolesLoaded, fetchRoles } = useRolesStore();
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Fetch roles if not loaded
+  useEffect(() => {
+    if (!rolesLoaded) fetchRoles();
+  }, [rolesLoaded, fetchRoles]);
+
+  // Filter roles that are available for this store (store-scoped or global)
+  const availableRoles = roles.filter(
+    (r) => !r.storeId || r.storeId === currentStore?.id
+  );
+
+  const selectedRole = roles.find((r) => r.id === selectedRoleId);
 
   const {
     register,
@@ -93,7 +89,7 @@ export function EmployeeFormDialog({
     reset,
     formState: { errors, isSubmitting },
   } = useForm<EmployeeFormValues>({
-    resolver: zodResolver(employeeFormSchema(isEdit)),
+    resolver: zodResolver(employeeFormSchema(isEdit)) as any,
     defaultValues: {
       name: "",
       mobile: "",
@@ -116,7 +112,7 @@ export function EmployeeFormDialog({
           password: "",
           passcode: "",
         });
-        setPermissions(defaultPermissions);
+        setSelectedRoleId(employee.roleId || "");
       } else {
         reset({
           name: "",
@@ -126,49 +122,33 @@ export function EmployeeFormDialog({
           password: "",
           passcode: "",
         });
-        setPermissions(defaultPermissions);
+        setSelectedRoleId("");
       }
     }
   }, [open, employee, reset]);
 
-  function togglePermission(module: ModuleKey, action: keyof ModuleAccess) {
-    setPermissions((prev) => ({
-      ...prev,
-      [module]: {
-        ...prev[module],
-        [action]: !prev[module][action],
-      },
-    }));
-  }
-
-  function toggleModuleAll(module: ModuleKey, enabled: boolean) {
-    setPermissions((prev) => ({
-      ...prev,
-      [module]: {
-        canRead: enabled,
-        canCreate: enabled,
-        canUpdate: enabled,
-        canDelete: enabled,
-      },
-    }));
-  }
-
-  function hasAnyAccess(module: ModuleKey): boolean {
-    const m = permissions[module];
-    return m.canRead || m.canCreate || m.canUpdate || m.canDelete;
-  }
-
   const onSubmit = async (data: EmployeeFormValues) => {
     setServerError(null);
 
+    if (!selectedRoleId) {
+      setServerError("Please select a role for the employee");
+      return;
+    }
+
     if (isEdit && employee) {
-      // Update profile
-      await updateUser(employee.id, {
+      // Update profile via server action (bypasses RLS)
+      const profileResult = await updateUserProfile(employee.id, {
         name: data.name,
         mobile: data.mobile,
         username: data.username,
         email: data.email || undefined,
+        roleId: selectedRoleId,
       });
+
+      if (!profileResult.success) {
+        setServerError(profileResult.error || "Failed to update employee");
+        return;
+      }
 
       // Update password if provided
       if (data.password) {
@@ -178,6 +158,9 @@ export function EmployeeFormDialog({
           return;
         }
       }
+
+      // Refresh users list
+      await fetchUsers();
     } else {
       // Create new employee via server action (creates auth user + profile)
       const result = await createAuthUser({
@@ -188,6 +171,7 @@ export function EmployeeFormDialog({
         username: data.username,
         role: "employee",
         storeId: currentStore?.id,
+        roleId: selectedRoleId,
         passcode: data.passcode || undefined,
       });
 
@@ -212,8 +196,8 @@ export function EmployeeFormDialog({
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update employee details and access permissions."
-              : "Fill in the details and set access permissions."}
+              ? "Update employee details and assigned role."
+              : "Fill in the details and assign a role."}
           </DialogDescription>
         </DialogHeader>
 
@@ -285,74 +269,60 @@ export function EmployeeFormDialog({
             </div>
           </div>
 
-          {/* Permissions Section */}
+          {/* Role Assignment Section */}
           <div className="rounded-xl border bg-muted/20 p-3.5 space-y-3">
             <div className="flex items-center gap-2">
               <Shield className="size-3.5 text-primary" />
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Access Permissions</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Role & Permissions</p>
             </div>
 
-            <div className="space-y-2">
-              {EMPLOYEE_MODULES.map((mod) => {
-                const active = hasAnyAccess(mod.key);
-                return (
-                  <div
-                    key={mod.key}
-                    className={cn(
-                      "rounded-lg border p-3 transition-colors",
-                      active ? "border-primary/30 bg-primary/5" : "bg-background"
-                    )}
-                  >
-                    {/* Module toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{mod.label}</p>
-                        <p className="text-[11px] text-muted-foreground">{mod.description}</p>
-                      </div>
-                      <Switch
-                        checked={active}
-                        onCheckedChange={(checked) => toggleModuleAll(mod.key, checked)}
-                      />
-                    </div>
-
-                    {/* CRUD toggles */}
-                    {active && (
-                      <div className="grid grid-cols-4 gap-1.5 mt-2.5 pt-2.5 border-t border-border/50">
-                        {(
-                          [
-                            { key: "canRead", label: "View" },
-                            { key: "canCreate", label: "Create" },
-                            { key: "canUpdate", label: "Edit" },
-                            { key: "canDelete", label: "Delete" },
-                          ] as const
-                        ).map((action) => {
-                          const checked = permissions[mod.key][action.key];
-                          return (
-                            <button
-                              key={action.key}
-                              type="button"
-                              onClick={() => togglePermission(mod.key, action.key)}
-                              className={cn(
-                                "flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition-colors",
-                                checked
-                                  ? "bg-primary/15 text-primary"
-                                  : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                              )}
-                            >
-                              <div className={cn(
-                                "size-2 rounded-full transition-colors",
-                                checked ? "bg-primary" : "bg-muted-foreground/30"
-                              )} />
-                              {action.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="grid gap-1.5">
+              <Label>Assign Role *</Label>
+              <Select
+                value={selectedRoleId}
+                onValueChange={(val: string | null) => {
+                  if (val) setSelectedRoleId(val);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a role...">{selectedRole?.name ?? "Select a role..."}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRoles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>
+                      {role.name}{role.storeId ? "" : " (Global)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {availableRoles.length === 0 && (
+                <p className="text-xs text-muted-foreground">No roles available. Create roles in Admin &gt; Roles first.</p>
+              )}
             </div>
+
+            {/* Show selected role's permissions as preview */}
+            {selectedRole && selectedRole.permissions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Permissions for this role:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedRole.permissions
+                    .filter((p) => p.canRead || p.canCreate || p.canUpdate || p.canDelete)
+                    .map((p) => {
+                      const actions = [
+                        p.canRead && "R",
+                        p.canCreate && "C",
+                        p.canUpdate && "U",
+                        p.canDelete && "D",
+                      ].filter(Boolean).join("");
+                      return (
+                        <Badge key={p.module} variant="secondary" className="text-[10px]">
+                          {p.module}: {actions}
+                        </Badge>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

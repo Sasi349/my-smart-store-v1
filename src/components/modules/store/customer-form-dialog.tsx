@@ -47,12 +47,14 @@ interface CustomerFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customer?: Customer;
+  readOnly?: boolean;
 }
 
 export function CustomerFormDialog({
   open,
   onOpenChange,
   customer,
+  readOnly = false,
 }: CustomerFormDialogProps) {
   const isEdit = !!customer;
   const { addCustomer, updateCustomer } = useCustomersStore();
@@ -128,16 +130,19 @@ export function CustomerFormDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? "Edit Customer" : "Add Customer"}
+            {readOnly ? "View Customer" : isEdit ? "Edit Customer" : "Add Customer"}
           </DialogTitle>
           <DialogDescription>
-            {isEdit
+            {readOnly
+              ? "Customer details (read-only)."
+              : isEdit
               ? "Update the customer details below."
               : "Fill in the details to add a new customer."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid gap-3">
+          <fieldset disabled={readOnly} className="contents">
           {/* Name */}
           <div className="grid gap-1.5">
             <Label htmlFor="customer-name">Name *</Label>
@@ -228,10 +233,17 @@ export function CustomerFormDialog({
             )}
           </div>
 
+          </fieldset>
           <DialogFooter>
-            <Button type="submit" disabled={isSubmitting}>
-              {isEdit ? "Update Customer" : "Add Customer"}
-            </Button>
+            {readOnly ? (
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+            ) : (
+              <Button type="submit" disabled={isSubmitting}>
+                {isEdit ? "Update Customer" : "Add Customer"}
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

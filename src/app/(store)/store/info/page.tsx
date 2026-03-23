@@ -25,12 +25,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MapPin, Phone, Mail, User, Store, UserCog, ArrowRight, Pencil } from "lucide-react";
+import { usePermissions } from "@/hooks/use-permissions";
+import { MapPin, Phone, Mail, User, Store, UserCog, ArrowRight, Pencil, IndianRupee } from "lucide-react";
 import Link from "next/link";
 
 export default function StoreInfoPage() {
   const { currentStore, setCurrentStore } = useAuthStore();
   const { updateStore } = useStoresStore();
+  const { isAdmin, hasPermission } = usePermissions();
+  const canEditInfo = isAdmin || hasPermission("info", "canUpdate");
   const [editOpen, setEditOpen] = useState(false);
 
   // Edit form state
@@ -75,10 +78,12 @@ export default function StoreInfoPage() {
   return (
     <div className="flex flex-col gap-4 p-4 pb-24 sm:pb-4">
       <PageHeader title="Store Info" backHref="/store">
-        <Button size="sm" onClick={openEdit}>
-          <Pencil className="size-4" data-icon="inline-start" />
-          Edit
-        </Button>
+        {canEditInfo && (
+          <Button size="sm" onClick={openEdit}>
+            <Pencil className="size-4" data-icon="inline-start" />
+            Edit
+          </Button>
+        )}
       </PageHeader>
 
       {/* Store Details */}
@@ -162,18 +167,35 @@ export default function StoreInfoPage() {
         </Card>
       )}
 
-      {/* Staff link */}
-      <Button
-        variant="outline"
-        className="w-full justify-between"
-        render={<Link href="/store/employees" />}
-      >
-        <span className="flex items-center gap-2">
-          <UserCog className="size-4" />
-          Manage Staff
-        </span>
-        <ArrowRight className="size-4" />
-      </Button>
+      {/* Quick links */}
+      <div className="flex flex-col gap-2">
+        <Button
+          variant="outline"
+          className="w-full justify-between"
+          render={<Link href="/store/dues" />}
+        >
+          <span className="flex items-center gap-2">
+            <IndianRupee className="size-4" />
+            Due Balances
+          </span>
+          <ArrowRight className="size-4" />
+        </Button>
+
+        {/* Staff link — admins only */}
+        {isAdmin && (
+          <Button
+            variant="outline"
+            className="w-full justify-between"
+            render={<Link href="/store/employees" />}
+          >
+            <span className="flex items-center gap-2">
+              <UserCog className="size-4" />
+              Manage Staff
+            </span>
+            <ArrowRight className="size-4" />
+          </Button>
+        )}
+      </div>
 
       {/* Edit Store Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

@@ -10,16 +10,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { profile, _hasHydrated } = useAuthStore();
   const router = useRouter();
 
-  // Redirect to login if not authenticated (only after hydration)
+  // Redirect to login if not authenticated, or to store if not super_admin
   useEffect(() => {
-    if (_hasHydrated && !profile) {
+    if (!_hasHydrated) return;
+    if (!profile) {
       router.push("/login");
+    } else if (profile.role !== "super_admin") {
+      router.push("/store");
     }
   }, [profile, _hasHydrated, router]);
 
   // Don't render until hydrated
   if (!_hasHydrated) return null;
   if (!profile) return null;
+  if (profile.role !== "super_admin") return null;
 
   return (
     <div className="flex min-h-screen flex-col">

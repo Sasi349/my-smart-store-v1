@@ -2,11 +2,18 @@ import { create } from "zustand";
 import type { Receipt, ReceiptItem, Product, Customer } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 import { useProductsStore } from "@/stores/products-store";
+import {
+  dbInsertReceipt,
+  dbInsertReceiptItems,
+  dbUpdateReceipt,
+  dbDeleteReceipt,
+  dbGetProductStock,
+  dbUpdateProductStock,
+} from "@/lib/db-actions";
 
 // Adjust stock for receipt items in the database and local store
 // direction: -1 to reduce (sale), +1 to restore (cancel/delete)
 async function adjustStock(items: ReceiptItem[], direction: 1 | -1) {
-  const supabase = createClient();
   const productUpdates = items
     .filter((item) => item.productId)
     .map((item) => ({
@@ -16,24 +23,11 @@ async function adjustStock(items: ReceiptItem[], direction: 1 | -1) {
 
   if (productUpdates.length === 0) return;
 
-  // Update each product stock in the database using direct read+write
   for (const update of productUpdates) {
-    const { data: product } = await supabase
-      .from("products")
-      .select("stock")
-      .eq("id", update.id)
-      .single();
-
-    if (product) {
-      const newStock = (product.stock as number) + update.change;
-      const { error } = await supabase
-        .from("products")
-        .update({ stock: newStock })
-        .eq("id", update.id);
-
-      if (error) {
-        console.error(`Failed to update stock for product ${update.id}:`, error.message);
-      }
+    const stockResult = await dbGetProductStock(update.id);
+    if (stockResult.success) {
+      const newStock = stockResult.data + update.change;
+      await dbUpdateProductStock(update.id, newStock);
     }
   }
 
@@ -52,35 +46,49 @@ async function adjustStock(items: ReceiptItem[], direction: 1 | -1) {
   }
 }
 
+type DiscountType = "flat" | "percentage";
+
 interface CurrentDraft {
   customerId?: string;
   items: ReceiptItem[];
   discount: number;
+  discountType: DiscountType;
 }
+
+type StatusFilter = "all" | "completed" | "draft" | "cancelled";
 
 interface ReceiptsState {
   receipts: Receipt[];
   currentDraft: CurrentDraft;
   isLoaded: boolean;
+  searchQuery: string;
+  statusFilter: StatusFilter;
 
   // Fetch
   fetchReceipts: (storeId: string) => Promise<void>;
 
   // Actions
   addReceipt: (receipt: Omit<Receipt, "id" | "createdAt">) => Promise<void>;
+  updateReceiptPayment: (id: string, additionalPayment: number) => Promise<boolean>;
+  distributePayment: (customerId: string, amount: number) => Promise<boolean>;
   updateReceiptStatus: (id: string, status: Receipt["status"]) => Promise<void>;
   deleteReceipt: (id: string) => Promise<void>;
+  setSearchQuery: (query: string) => void;
+  setStatusFilter: (filter: StatusFilter) => void;
 
   // Draft actions (local only — draft is not persisted to DB until finalized)
   setDraftCustomer: (customerId: string | undefined) => void;
   addDraftItem: (item: ReceiptItem) => void;
   updateDraftItemQuantity: (itemId: string, quantity: number) => void;
+  updateDraftItemPrice: (itemId: string, unitPrice: number) => void;
   removeDraftItem: (itemId: string) => void;
   setDraftDiscount: (discount: number) => void;
+  setDraftDiscountType: (type: DiscountType) => void;
   resetDraft: () => void;
 
   // Computed
   receiptHistory: () => Receipt[];
+  filteredReceipts: () => Receipt[];
   draftSubtotal: () => number;
   draftTotal: () => number;
 }
@@ -89,6 +97,7 @@ const initialDraft: CurrentDraft = {
   customerId: undefined,
   items: [],
   discount: 0,
+  discountType: "flat",
 };
 
 function mapProduct(row: Record<string, unknown>): Product {
@@ -165,6 +174,8 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
   receipts: [],
   currentDraft: { ...initialDraft },
   isLoaded: false,
+  searchQuery: "",
+  statusFilter: "all",
 
   fetchReceipts: async (storeId) => {
     const supabase = createClient();
@@ -212,28 +223,23 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
   addReceipt: async (receiptData) => {
     if (!receiptData.storeId?.trim() || !receiptData.createdBy?.trim()) return;
 
-    const supabase = createClient();
+    const result = await dbInsertReceipt({
+      store_id: receiptData.storeId,
+      customer_id: receiptData.customerId || null,
+      created_by: receiptData.createdBy,
+      subtotal: receiptData.subtotal,
+      discount: receiptData.discount,
+      total: receiptData.total,
+      paid_amount: receiptData.paidAmount,
+      status: receiptData.status,
+    });
 
-    // Insert receipt
-    const { data: receiptRow, error: rError } = await supabase
-      .from("receipts")
-      .insert({
-        store_id: receiptData.storeId,
-        customer_id: receiptData.customerId || null,
-        created_by: receiptData.createdBy,
-        subtotal: receiptData.subtotal,
-        discount: receiptData.discount,
-        total: receiptData.total,
-        paid_amount: receiptData.paidAmount,
-        status: receiptData.status,
-      })
-      .select()
-      .single();
-
-    if (rError || !receiptRow) {
-      if (rError) console.error("Failed to add receipt:", rError.message);
+    if (!result.success) {
+      console.error("Failed to add receipt:", result.error);
       return;
     }
+
+    const receiptRow = result.data;
 
     // Insert receipt items
     let items: ReceiptItem[] = [];
@@ -249,12 +255,10 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
         total: item.total,
       }));
 
-      const { data: itemRows } = await supabase
-        .from("receipt_items")
-        .insert(itemInserts)
-        .select();
-
-      items = (itemRows || []).map(mapReceiptItem);
+      const itemsResult = await dbInsertReceiptItems(itemInserts);
+      if (itemsResult.success) {
+        items = itemsResult.data.map(mapReceiptItem);
+      }
     }
 
     const newReceipt = mapReceipt(receiptRow, items);
@@ -262,9 +266,85 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
 
     // Reduce stock for completed receipts
     if (receiptData.status === "completed" && receiptData.items.length > 0) {
-      console.log("Adjusting stock for", receiptData.items.length, "items");
       await adjustStock(receiptData.items, -1);
     }
+  },
+
+  updateReceiptPayment: async (id, additionalPayment) => {
+    if (!id?.trim() || additionalPayment <= 0) return false;
+
+    const { receipts } = get();
+    const receipt = receipts.find((r) => r.id === id);
+    if (!receipt) return false;
+
+    const newPaidAmount = receipt.paidAmount + additionalPayment;
+    // Don't allow overpayment
+    if (newPaidAmount > receipt.total) return false;
+
+    const result = await dbUpdateReceipt(id, { paid_amount: newPaidAmount });
+    if (!result.success) {
+      console.error("Failed to update payment:", result.error);
+      return false;
+    }
+
+    set((state) => ({
+      receipts: state.receipts.map((r) =>
+        r.id === id
+          ? { ...r, paidAmount: newPaidAmount, balance: r.total - newPaidAmount }
+          : r
+      ),
+    }));
+    return true;
+  },
+
+  distributePayment: async (customerId, amount) => {
+    if (!customerId || amount <= 0) return false;
+
+    const { receipts } = get();
+
+    // Get due receipts for this customer, sorted oldest first (FIFO)
+    const dueReceipts = receipts
+      .filter((r) => r.customerId === customerId && r.balance > 0)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    if (dueReceipts.length === 0) return false;
+
+    let remaining = amount;
+    const updates: { id: string; newPaidAmount: number }[] = [];
+
+    for (const receipt of dueReceipts) {
+      if (remaining <= 0) break;
+      const payForThis = Math.min(remaining, receipt.balance);
+      updates.push({
+        id: receipt.id,
+        newPaidAmount: receipt.paidAmount + payForThis,
+      });
+      remaining -= payForThis;
+    }
+
+    // Apply all updates to DB
+    for (const update of updates) {
+      const result = await dbUpdateReceipt(update.id, { paid_amount: update.newPaidAmount });
+      if (!result.success) {
+        console.error("Failed to update payment for receipt:", update.id, result.error);
+        return false;
+      }
+    }
+
+    // Update local state for all affected receipts
+    set((state) => ({
+      receipts: state.receipts.map((r) => {
+        const update = updates.find((u) => u.id === r.id);
+        if (!update) return r;
+        return {
+          ...r,
+          paidAmount: update.newPaidAmount,
+          balance: r.total - update.newPaidAmount,
+        };
+      }),
+    }));
+
+    return true;
   },
 
   updateReceiptStatus: async (id, status) => {
@@ -275,16 +355,12 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
     if (!receipt) return;
 
     const oldStatus = receipt.status;
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("receipts")
-      .update({ status })
-      .eq("id", id);
-
-    if (error) {
-      console.error("Failed to update receipt status:", error.message);
+    const result = await dbUpdateReceipt(id, { status });
+    if (!result.success) {
+      console.error("Failed to update receipt status:", result.error);
       return;
     }
+
     set((state) => ({
       receipts: state.receipts.map((r) =>
         r.id === id ? { ...r, status } : r
@@ -293,10 +369,8 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
 
     // Handle stock adjustments on status transitions
     if (oldStatus !== "completed" && status === "completed") {
-      // Draft/cancelled → completed: reduce stock
       await adjustStock(receipt.items, -1);
     } else if (oldStatus === "completed" && status === "cancelled") {
-      // Completed → cancelled: restore stock
       await adjustStock(receipt.items, 1);
     }
   },
@@ -307,10 +381,9 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
     const { receipts } = get();
     const receipt = receipts.find((r) => r.id === id);
 
-    const supabase = createClient();
-    const { error } = await supabase.from("receipts").delete().eq("id", id);
-    if (error) {
-      console.error("Failed to delete receipt:", error.message);
+    const result = await dbDeleteReceipt(id);
+    if (!result.success) {
+      console.error("Failed to delete receipt:", result.error);
       return;
     }
     set((state) => ({ receipts: state.receipts.filter((r) => r.id !== id) }));
@@ -347,6 +420,18 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
       },
     })),
 
+  updateDraftItemPrice: (itemId, unitPrice) =>
+    set((state) => ({
+      currentDraft: {
+        ...state.currentDraft,
+        items: state.currentDraft.items.map((item) =>
+          item.id === itemId
+            ? { ...item, unitPrice, total: unitPrice * item.quantity }
+            : item
+        ),
+      },
+    })),
+
   removeDraftItem: (itemId) =>
     set((state) => ({
       currentDraft: {
@@ -360,11 +445,56 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
       currentDraft: { ...state.currentDraft, discount },
     })),
 
+  setDraftDiscountType: (discountType) =>
+    set((state) => ({
+      currentDraft: { ...state.currentDraft, discountType, discount: 0 },
+    })),
+
   resetDraft: () => set({ currentDraft: { ...initialDraft, items: [] } }),
+
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  setStatusFilter: (statusFilter) => set({ statusFilter }),
 
   receiptHistory: () => {
     const { receipts } = get();
     return [...receipts].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  },
+
+  filteredReceipts: () => {
+    const { receipts, searchQuery, statusFilter } = get();
+    const query = searchQuery.toLowerCase().trim();
+
+    let filtered = [...receipts];
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((r) => r.status === statusFilter);
+    }
+
+    // Search by customer name, mobile, receipt ID, or total
+    if (query) {
+      filtered = filtered.filter((r) => {
+        const customerName = r.customer?.name?.toLowerCase() || "";
+        const customerMobile = r.customer?.mobile || "";
+        const receiptId = r.id.toLowerCase();
+        const receiptNum = r.id.replace("rec-", "").slice(-4).padStart(4, "0");
+        const total = r.total.toFixed(2);
+
+        return (
+          customerName.includes(query) ||
+          customerMobile.includes(query) ||
+          receiptId.includes(query) ||
+          receiptNum.includes(query) ||
+          query.replace("#", "") === receiptNum ||
+          total.includes(query)
+        );
+      });
+    }
+
+    // Sort newest first
+    return filtered.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   },
@@ -377,6 +507,10 @@ export const useReceiptsStore = create<ReceiptsState>()((set, get) => ({
   draftTotal: () => {
     const { currentDraft } = get();
     const subtotal = currentDraft.items.reduce((sum, item) => sum + item.total, 0);
-    return Math.max(0, subtotal - currentDraft.discount);
+    const discountAmount =
+      currentDraft.discountType === "percentage"
+        ? subtotal * (currentDraft.discount / 100)
+        : currentDraft.discount;
+    return Math.max(0, subtotal - discountAmount);
   },
 }));

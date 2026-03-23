@@ -1,13 +1,21 @@
 "use client";
 
 import { use, useEffect, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import html2canvas from "html2canvas-pro";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useReceiptsStore } from "@/stores/receipts-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { Download, ShoppingBag } from "lucide-react";
+import { Download, ShoppingBag, Trash2 } from "lucide-react";
 import type { Receipt } from "@/types";
 
 function formatDate(dateStr: string): string {
@@ -47,8 +55,17 @@ export default function ReceiptDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from");
+  const cid = searchParams.get("cid");
+  const backHref = from === "dues"
+    ? "/store/dues"
+    : from === "customer" && cid
+    ? `/store/customers/${cid}/purchases`
+    : "/store/receipts";
   const { currentStore, profile } = useAuthStore();
-  const { receipts, isLoaded, fetchReceipts } = useReceiptsStore();
+  const { receipts, isLoaded, fetchReceipts, deleteReceipt } = useReceiptsStore();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (currentStore?.id && !isLoaded) {
@@ -114,7 +131,7 @@ export default function ReceiptDetailPage({
   if (!receipt) {
     return (
       <div className="flex flex-col min-h-full">
-        <PageHeader title="Receipt" backHref="/store/receipts" />
+        <PageHeader title="Receipt" backHref={backHref} />
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <ShoppingBag className="h-10 w-10 text-muted-foreground mb-4" />
           <h3 className="text-base font-medium mb-1">Receipt not found</h3>
@@ -140,7 +157,7 @@ export default function ReceiptDetailPage({
     <div className="flex flex-col min-h-full">
       <PageHeader
         title={`Receipt #${receiptNo}`}
-        backHref="/store/receipts"
+        backHref={backHref}
       />
 
       <div className="mx-auto w-full max-w-[380px]">
@@ -185,6 +202,25 @@ export default function ReceiptDetailPage({
             <span>Time: {formatTime(receipt.createdAt)}</span>
             <span>{receipt.status.toUpperCase()}</span>
           </div>
+
+          {/* Customer info */}
+          {receipt.customer && (
+            <>
+              <CharLine />
+              <div className="my-1">
+                <div className="flex justify-between">
+                  <span className="text-[10px] text-black/50 uppercase">Customer</span>
+                  <span className="font-bold text-[11px]">{receipt.customer.name}</span>
+                </div>
+                {receipt.customer.mobile && (
+                  <div className="flex justify-between text-[10px] text-black/50">
+                    <span>Mobile</span>
+                    <span>{receipt.customer.mobile}</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           <CharLine char="=" />
 
@@ -275,6 +311,13 @@ export default function ReceiptDetailPage({
         {/* Actions */}
         <div className="flex gap-2 mt-4 pb-4">
           <Button
+            variant="destructive"
+            size="icon"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+          <Button
             className="flex-1"
             onClick={handleDownload}
           >
@@ -284,6 +327,29 @@ export default function ReceiptDetailPage({
         </div>
       </div>
 
+      {/* Delete Confirmation */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Receipt</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete receipt <span className="font-medium text-foreground">#{receiptNo}</span>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                await deleteReceipt(id);
+                router.push(backHref);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

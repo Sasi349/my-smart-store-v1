@@ -7,6 +7,8 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useProductsStore } from "@/stores/products-store";
 import { useCustomersStore } from "@/stores/customers-store";
 import { useReceiptsStore } from "@/stores/receipts-store";
+import { usePermissions } from "@/hooks/use-permissions";
+import type { Module } from "@/types";
 
 export default function StoreDashboardPage() {
   const { currentStore } = useAuthStore();
@@ -22,7 +24,18 @@ export default function StoreDashboardPage() {
     }
   }, [currentStore?.id, productsLoaded, customersLoaded, receiptsLoaded, fetchProducts, fetchCustomers, fetchReceipts]);
 
-  const modules = [
+  const { canAccessModule, isAdmin } = usePermissions();
+
+  const allModules: {
+    title: string;
+    description: string;
+    href: string;
+    icon: typeof Package;
+    count: number | null;
+    iconColor: string;
+    iconBg: string;
+    module: Module;
+  }[] = [
     {
       title: "Products",
       description: "Manage products, pricing and stock",
@@ -31,6 +44,7 @@ export default function StoreDashboardPage() {
       count: products.length,
       iconColor: "text-blue-600 dark:text-blue-400",
       iconBg: "bg-blue-500/10 dark:bg-blue-500/20",
+      module: "products",
     },
     {
       title: "Customers",
@@ -40,6 +54,7 @@ export default function StoreDashboardPage() {
       count: customers.length,
       iconColor: "text-emerald-600 dark:text-emerald-400",
       iconBg: "bg-emerald-500/10 dark:bg-emerald-500/20",
+      module: "customers",
     },
     {
       title: "Receipts",
@@ -49,6 +64,7 @@ export default function StoreDashboardPage() {
       count: receipts.length,
       iconColor: "text-violet-600 dark:text-violet-400",
       iconBg: "bg-violet-500/10 dark:bg-violet-500/20",
+      module: "receipts",
     },
     {
       title: "Info",
@@ -58,8 +74,13 @@ export default function StoreDashboardPage() {
       count: null,
       iconColor: "text-amber-600 dark:text-amber-400",
       iconBg: "bg-amber-500/10 dark:bg-amber-500/20",
+      module: "info",
     },
   ];
+
+  const modules = allModules.filter(
+    (mod) => isAdmin || canAccessModule(mod.module)
+  );
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-8rem)] w-full max-w-4xl flex-col justify-center space-y-8 px-4 py-8 sm:px-6">
