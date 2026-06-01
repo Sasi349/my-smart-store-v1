@@ -108,12 +108,16 @@ export default function ReceiptsPage() {
     <div className="flex flex-col gap-4 p-4">
       <PageHeader title="Receipts" backHref="/store" count={receipts.length}>
         <div className="flex items-center gap-2">
-          <Button size="sm" render={<Link href="/store/dues" />}>
+          {/* Mobile: icon-only; Desktop: icon + label */}
+          <Button size="icon-sm" className="sm:hidden" render={<Link href="/store/dues" />}>
+            <IndianRupee className="size-4" />
+          </Button>
+          <Button size="sm" className="hidden sm:flex" render={<Link href="/store/dues" />}>
             <IndianRupee className="size-4" data-icon="inline-start" />
             Dues
           </Button>
           {canCreate && (
-            <Button size="sm" onClick={() => setPosOpen(true)}>
+            <Button size="sm" className="hidden sm:flex" onClick={() => setPosOpen(true)}>
               <Plus className="size-4" data-icon="inline-start" />
               New Receipt
             </Button>
@@ -248,6 +252,17 @@ export default function ReceiptsPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile FAB */}
+      {canCreate && (
+        <Button
+          size="icon-lg"
+          className="fixed bottom-20 right-4 rounded-full shadow-lg sm:hidden size-14"
+          onClick={() => setPosOpen(true)}
+        >
+          <Plus className="size-6" />
+        </Button>
+      )}
 
       <POSDialog open={posOpen} onOpenChange={setPosOpen} />
     </div>

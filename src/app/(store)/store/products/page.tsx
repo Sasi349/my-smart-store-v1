@@ -266,7 +266,7 @@ export default function ProductsPage() {
       {canCreate && (
         <Button
           size="icon-lg"
-          className="fixed bottom-6 right-6 rounded-full shadow-lg sm:hidden size-14"
+          className="fixed bottom-20 right-4 rounded-full shadow-lg sm:hidden size-14"
           onClick={handleCreate}
         >
           <Plus className="size-6" />
