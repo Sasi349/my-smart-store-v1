@@ -29,11 +29,44 @@ export default function LoginPage() {
 
   const passcodeInputRef = useRef<HTMLInputElement>(null);
 
-  // Redirect if already logged in (only after hydration)
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  // Validate the real Supabase session on mount (after hydration)
+  // If the session expired, the persisted profile in localStorage is stale —
+  // clear it and show the login form instead of "Loading…" forever.
   useEffect(() => {
-    if (_hasHydrated && profile) {
-      redirectUser(profile);
+    if (!_hasHydrated) return;
+
+    async function validateSession() {
+      if (!profile) {
+        // No cached profile — nothing to validate, show login form
+        setIsCheckingSession(false);
+        return;
+      }
+
+      try {
+        // Check the REAL session with Supabase (not just localStorage)
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) {
+          // Session expired — clear stale profile and show login form
+          useAuthStore.getState().setProfile(null);
+          useAuthStore.getState().setCurrentStore(null);
+          setIsCheckingSession(false);
+          return;
+        }
+
+        // Session is valid — redirect to the right page
+        await redirectUser(profile);
+      } catch {
+        // Network error or other failure — clear stale data to be safe
+        useAuthStore.getState().setProfile(null);
+        useAuthStore.getState().setCurrentStore(null);
+        setIsCheckingSession(false);
+      }
     }
+
+    validateSession();
   }, [_hasHydrated]);
 
   async function redirectUser(p: Profile | null) {
@@ -170,7 +203,8 @@ export default function LoginPage() {
     setError("");
   }
 
-  if (!_hasHydrated || profile) {
+  // Show loading screen only while actively checking the session
+  if (!_hasHydrated || isCheckingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center space-y-3">

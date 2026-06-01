@@ -2,9 +2,13 @@
 
 import { useEffect } from "react";
 import { useThemeStore } from "@/stores/theme-store";
+import { useAuthListener } from "@/hooks/use-auth-listener";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { mode } = useThemeStore();
+
+  // Sync Supabase auth state changes with Zustand store
+  useAuthListener();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -25,3 +29,4 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
+
